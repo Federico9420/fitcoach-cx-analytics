@@ -1,257 +1,267 @@
-# FitCoach CX Analytics
+<!-- ═══════════════════════════════ ESPAÑOL ═══════════════════════════════ -->
 
-> **[🇦🇷 Leer en Español](#español) · [🇺🇸 Read in English](#english)**
+# FitCoach — CX Analytics
+### Cuando facturar más cada mes esconde un problema de fondo
 
----
+> Un negocio de suscripción puede mostrar ingresos en alza y estar enfermo por dentro.
+> Este proyecto toma un caso real de coaching fitness digital y responde una pregunta incómoda:
+> **¿el negocio crece, o solo corre cada vez más rápido para quedarse en el mismo lugar?**
 
-<a name="español"></a>
-
-## 🇦🇷 Español
-
-### Sobre este proyecto
-
-Este proyecto nació de una pregunta de negocio real:
-
-> *¿Puede un negocio de coaching fitness tener revenue creciente y un problema de retención grave al mismo tiempo — sin que nadie lo note?*
-
-La respuesta es sí. Y este análisis lo demuestra.
-
-**FitCoach** es un negocio de coaching fitness digital que vende programas de entrenamiento personalizado a través de Instagram y TikTok. Dos productos: un plan Basic de pago único y un plan Pro de renovación mensual. Revenue estable. Adquisición creciente. Todo bien en superficie.
-
-Debajo: un segmento de clientes Pro que renovó 2–3 veces está empezando a desaparecer silenciosamente. Los clientes nuevos de TikTok tapan el hueco mes a mes. El revenue no baja. Pero el CLV promedio sí — y nadie lo estaba mirando.
-
-Este proyecto es el análisis de ese problema.
+**Stack:** MySQL 8 · Power BI  |  **Período:** ene 2023 – dic 2024  |  **Base:** 400 clientes · 2.759 transacciones · 17.312 registros de engagement
+**Enfoque:** de la pregunta de negocio → SQL → visualización → **recomendación**. No es un tablero: es una decisión.
 
 ---
 
-### El dataset
+## 1. El planteo inicial
 
-Dataset sintético con patrones de comportamiento realistas, construido para reflejar dinámicas reales de negocios de suscripción de coaching digital.
+**FitCoach** vende programas de entrenamiento en dos modalidades: **Basic** ($30, pago único) y **Pro** ($50/mes, renovación). El revenue mensual crece de forma sostenida y la dueña asume, razonablemente, que el negocio está sano.
 
-| Tabla | Registros | Descripción |
-|---|---|---|
-| `customers` | 400 | Canal de adquisición, fecha de alta |
-| `transactions` | 1.859 | Pagos, renovaciones, tipo de plan |
-| `engagement` | 7.428 | Actividad semanal: workouts, videos, mensajes |
+La hipótesis de trabajo es que esa lectura de superficie es engañosa: **el revenue estable puede estar tapando una dependencia estructural de las altas nuevas.** Si cada mes entran suficientes clientes nuevos como para reemplazar a los que se van, el ingreso total no baja — pero el negocio se vuelve cada vez más dependiente de seguir comprando clientes.
 
-**Período:** Enero 2023 — Diciembre 2024 (24 meses)  
-**Productos:** Basic ($30 pago único) · Pro ($50 renovación mensual)  
-**Canales:** Instagram · TikTok · Referral · Organic
+### Las preguntas que el análisis debía responder
 
-Los patrones intencionales del dataset:
-
-- 📉 **El efecto TikTok:** el canal que más volumen trae tiene el CLV más bajo ($61 vs $285 de Referral)
-- ⚠️ **La señal pre-churn:** el engagement cae 3 semanas antes de que el cliente no renueve
-- 🔴 **El segmento silencioso:** clientes Pro con 3–6 meses de antigüedad, todavía "activos" en el sistema pero con comportamiento de abandono
+| # | Pregunta de negocio | Área |
+|---|---------------------|------|
+| 1 | ¿Qué porcentaje de clientes no renueva después del mes 3? | Churn |
+| 2 | ¿Las cohortes recientes retienen mejor o peor que las anteriores? | Cohortes |
+| 3 | ¿Qué segmento de clientes está en riesgo? | RFM |
+| 4 | ¿Cuánto revenue recurrente está en juego? | CLV |
+| 5 | ¿Hay señales de comportamiento que predicen el churn? | Pre-churn |
+| 6 | ¿Qué canal de adquisición trae los clientes de mayor valor? | CLV por canal |
+| 7 | Si retenemos el 30% de los clientes en riesgo, ¿cuánto ingreso adicional generamos? | Recomendación |
 
 ---
 
-### Estructura del análisis
+## 2. Lo que se hizo
 
-El proyecto sigue una metodología profesional de extremo a extremo:
+**Auditoría de datos primero.** Antes de una sola query de análisis se corrió un control de calidad sobre las tres tablas: nulos en campos críticos, duplicados, coherencia de fechas, precios fuera de rango y referencias huérfanas. Resultado: dataset limpio (0 nulos críticos, 0 duplicados, 0 huérfanos, 0 transacciones previas a la adquisición). Único hallazgo: **diciembre 2024 truncado en la fuente** — documentado y aislado para que no contamine la lectura.
 
-```
-1. Auditoría del dataset     →  validar antes de analizar
-2. Análisis de Cohortes      →  retención mensual por cohorte de adquisición
-3. RFM + Segmentación        →  segmentar clientes por valor y comportamiento
-4. CLV por segmento          →  cuantificar el revenue en riesgo en plata
-5. Señales pre-churn         →  identificar el momento exacto de la caída
-6. Insights + Soluciones     →  recomendaciones orientadas al negocio
-```
+**Capa analítica en SQL (views).** Se construyó una capa de vistas reutilizables:
+- **Cohortes y retención** — actividad de cada cliente por mes desde su primera compra.
+- **RFM** — segmentación por Recency, Frequency y Monetary con `NTILE(5)`.
+- **CLV** — valor acumulado por segmento y por canal.
+- **Revenue en riesgo** — cuantificación del ingreso asociado al segmento En Riesgo.
+- **Churn y pre-churn** — estado de cada cliente y comparación de engagement previo a la baja.
 
-> **Por qué este orden:** el análisis empieza auditando los datos porque un error en los datos produce conclusiones incorrectas aunque las queries sean perfectas. Solo después de confirmar que el dataset es congruente se avanza al análisis.
+**Control de calidad del propio análisis.** Durante la revisión se detectó y corrigió un error de dirección en el `NTILE` del RFM (los scores estaban invertidos, etiquetando como "Campeones" a los peores clientes). El fix quedó documentado en el SQL.
 
----
-
-### Stack tecnológico
-
-![MySQL](https://img.shields.io/badge/MySQL-4479A1?style=for-the-badge&logo=mysql&logoColor=white)
-![Power BI](https://img.shields.io/badge/Power%20BI-F2C811?style=for-the-badge&logo=powerbi&logoColor=black)
-![Python](https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white)
-
-- **MySQL** — auditoría, RFM con NTILE(5), cohortes, CLV, señales pre-churn
-- **Power BI + DAX** — dashboard de 4 páginas con slicers cruzados por canal
-- **Python** — generación del dataset sintético con patrones controlados
+**Visualización en Power BI.** Dashboard de cuatro páginas (visión general, cohortes, RFM, señales de churn) para consumo de la gerencia.
 
 ---
 
-### Módulos de análisis
+## 3. Resultados obtenidos
 
-#### 🔍 Auditoría del dataset
-Antes de escribir una sola query de análisis, verifico que los datos sean congruentes: nulos en campos críticos, duplicados, fechas imposibles, precios fuera de rango, referencias huérfanas. El resultado de la auditoría se documenta antes de avanzar.
+**El crecimiento es real… y frágil.**
+- Revenue 2023: **$40.610** → 2024 (ene–nov): **$93.900** (**+131%**).
+- Pero **69% de la base ya no está activa** al cierre del período, y **el 37–40% de los clientes paga una sola vez** y nunca vuelve.
 
-#### 📅 Análisis de Cohortes
-Agrupa clientes por mes de primera compra y rastrea qué porcentaje sigue activo en cada mes posterior. El insight clave: la retención cae abruptamente entre el mes 2 y el mes 3, y las cohortes de TikTok retienen un 40% menos que las de Instagram.
+**La retención cae temprano.**
+- Retención agregada: **62%** (mes 1) → **52%** (mes 3) → **37%** (mes 6).
+- **El 48% de los clientes no sigue activo pasado el mes 3.**
 
-#### 🎯 RFM + Segmentación
-Cada cliente recibe tres scores del 1 al 5 usando `NTILE(5)` en SQL: Recency (cuándo compró por última vez), Frequency (cuántas veces compró) y Monetary (cuánto gastó). La combinación de scores genera 6 segmentos accionables: Campeones, Leales, En Riesgo, Grandes Puntuales, Nuevos e Hibernando.
+**La calidad no se deterioró en el tiempo — pero el valor por cliente sí baja.**
+- Cohortes comparadas a la misma edad: **54% (2023) vs 52% (2024)** a mes 3. Retienen casi igual.
+- El CLV promedio acumulado cae en las cohortes nuevas, pero por **composición** (los clientes nuevos tuvieron menos meses para acumular pagos), no por peor retención. *Distinguir esto es la diferencia entre un diagnóstico correcto y uno equivocado.*
 
-#### 💰 Customer Lifetime Value (CLV)
-Calcula el valor total de cada cliente y lo cruza con su segmento RFM y canal de adquisición. La brecha de CLV entre canales es el hallazgo más crítico del proyecto: un cliente de Referral vale 4.6x más que uno de TikTok durante su ciclo de vida.
+**El canal explica casi todo.**
 
-#### 📉 Señales pre-churn
-Analiza el comportamiento de engagement en las 4 semanas previas al churn comparado con clientes activos. Los workouts completados caen de 8–10 por semana a 1–2. Los mensajes se cortan. La señal aparece 3 semanas antes de la no renovación — suficiente tiempo para intervenir.
+| Canal | CLV promedio | Retención mes 3 |
+|-------|-------------:|----------------:|
+| Referral | **$417** | 59% |
+| Instagram | **$378** | 60% |
+| Organic | $292 | 46% |
+| TikTok | **$213** | **29%** |
+
+Un cliente de Referral vale casi el doble que uno de TikTok y retiene el doble.
+
+**No hay señal conductual de pre-churn.**
+- Engagement en las 4 semanas previas a la baja: **7,4** (churned) vs **7,7** (activo). Sin diferencia relevante — verificado por nivel y por caída respecto a la línea base propia. El predictor real del churn es **el canal**, no el comportamiento.
+
+**Segmentación (RFM):**
+
+| Segmento | Clientes | % base | CLV | Frecuencia | Recency |
+|----------|---------:|-------:|----:|-----------:|--------:|
+| Campeón | 131 | 33% | $713 | 14 | 40 d |
+| Leal | 29 | 7% | $736 | 15 | 56 d |
+| Intermedio | 80 | 20% | $122 | 3 | 102 d |
+| En Riesgo | 39 | 10% | $162 | 3 | 402 d |
+| Hibernando | 121 | 30% | $35 | 1 | 474 d |
 
 ---
 
-### El insight principal
+## 4. Respuesta a la gerencia comercial
 
-> *"El revenue creció un 40% en 24 meses, pero el CLV promedio cayó un 28%. Un segmento de 85 clientes Pro con historial de pago está en proceso de abandono silencioso. Representan $X de revenue mensual recurrente. Si se retiene el 30% con intervención proactiva en semana 8, el impacto es $Y adicionales por mes sin adquirir un solo cliente nuevo."*
+> *Presentación ejecutiva del diagnóstico.*
+
+**El negocio no está creciendo: está reponiendo.** El revenue sube, pero se sostiene sobre un flujo constante de altas nuevas que reemplaza a una base que se vacía (69% de churn, 4 de cada 10 clientes que pagan una sola vez). Mientras el canal de adquisición siga alimentando el embudo, los números de arriba se ven sanos. El día que ese flujo se enfríe, el problema aparece de golpe.
+
+**El cuello de botella no es la retención en el tiempo: es la calidad de lo que compramos.** Las cohortes retienen parejo mes a mes; no hay un deterioro progresivo. Lo que hay es un canal —TikTok— que aporta volumen a la mitad de valor y la mitad de retención que Referral e Instagram. Estamos financiando crecimiento con el cliente más caro de mantener.
+
+**La palanca no es "evitar que se vayan", es "dejar de traer a los que se van".** No existe una señal de comportamiento que nos permita anticipar el churn e intervenir a tiempo (lo verificamos y no está). Por lo tanto, la eficiencia se gana **antes** de la adquisición, eligiendo mejor el canal, no **después**, persiguiendo clientes que ya decidieron irse.
+
+### Mis observaciones
+
+1. **El indicador de superficie (revenue) y el indicador de salud (dependencia de altas) apuntan en direcciones opuestas.** Reportar solo el primero da una falsa sensación de control.
+2. **"CLV promedio en caída" es cierto pero mal interpretable.** Buena parte de la caída es efecto de composición, no de deterioro. Comunicarlo sin ese matiz llevaría a perseguir un problema que no existe (la retención) y a ignorar el que sí existe (el mix de canal).
+3. **El segmento "En Riesgo" es, en realidad, win-back.** Con recency promedio de 402 días, no son clientes a punto de irse: ya se fueron. La acción correcta es reactivación, no retención preventiva.
+
+### Mis recomendaciones al negocio
+
+1. **Reasignar la inversión de adquisición hacia Referral e Instagram.** Son los canales de mayor CLV y retención. A TikTok, o se le rediseña el onboarding para levantar su retención, o se lo trata como canal de awareness barato — no como fuente de suscriptores Pro.
+2. **Formalizar un programa de referidos.** Referral ya es el mejor canal de forma orgánica; sistematizarlo (incentivo por referido que complete 3 meses) escala el mejor activo del negocio en vez del más barato.
+3. **Campaña de win-back sobre el segmento En Riesgo.** Son 39 clientes = **$1.950/mes** de revenue recurrente. Recuperar el 30% son **$585/mes** ($7.020/año) sin adquirir un solo cliente nuevo.
 
 ---
 
-### Estado del proyecto
-
-| Módulo | Estado |
-|---|---|
-| Dataset sintético | ✅ Completo |
-| Documentación del proyecto | ✅ Completa |
-| Auditoría del dataset | 🔄 En progreso |
-| Análisis de Cohortes | 🔄 En progreso |
-| RFM + Segmentación | 🔄 En progreso |
-| CLV por segmento | 🔄 En progreso |
-| Señales pre-churn | ⏳ Pendiente |
-| Dashboard Power BI | ⏳ Pendiente |
-
----
-
-### Estructura del repositorio
+## 5. Estructura del repositorio
 
 ```
 fitcoach-cx-analytics/
-│
-├── data/
-│   ├── customers.csv
-│   ├── transactions.csv
-│   └── engagement.csv
-│
-├── sql/
-│   ├── 01_auditoria.sql
-│   ├── 02_cohortes.sql
-│   ├── 03_rfm_segmentacion.sql
-│   ├── 04_clv.sql
-│   └── 05_señales_prechurn.sql
-│
-├── docs/
-│   └── FitCoach_Proyecto_Portfolio.docx
-│
-├── dashboard/
-│   └── FitCoach_Dashboard.pbix        (próximamente)
-│
-└── README.md
+├── README.md
+├── sql/          cx_analytics.sql   — esquema + views (cohortes, RFM, CLV, churn, pre-churn)
+├── data/         tablas raw + outputs de las views
+├── reports/      FitCoach_CaseStudy_CX.pdf   — informe completo
+├── charts/       gráficos del análisis
+└── dashboard/    capturas Power BI + notas de medidas DAX
 ```
 
----
+**Cómo reproducirlo:** cargar las tres tablas raw en MySQL 8 → correr `sql/cx_analytics.sql` → validar RFM con `SELECT r_score, ROUND(AVG(recency_dias)) FROM vw_rfm_scores GROUP BY r_score;` (r_score = 5 debe tener menos días) → conectar Power BI a las views.
 
-### Sobre mí
+**Notas de método:** dataset sintético con patrones realistas · fecha de referencia 2024-12-31 (diciembre truncado, excluido solo de la tendencia mensual) · RFM con `NTILE(5)`, 5 = mejor · CLV = revenue acumulado por cliente · todos los números provienen de las views SQL o de cálculo directo sobre las tres tablas.
 
-**Federico Almonacid** — Jr Data Analyst | BI & CX Analytics  
-Río Grande, Tierra del Fuego, Argentina
+<br>
 
-Más de 4 años de experiencia en retail (gestión de equipos, NPS, KPIs, análisis de performance). En transición activa hacia roles de BI Analyst, CX Analyst y Revenue Analyst.
+<!-- ═══════════════════════════════ ENGLISH ═══════════════════════════════ -->
 
-[![LinkedIn](https://img.shields.io/badge/LinkedIn-0077B5?style=for-the-badge&logo=linkedin&logoColor=white)](https://www.linkedin.com/in/federicoalmonacid)
-[![GitHub](https://img.shields.io/badge/GitHub-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/Federico9420)
+# FitCoach — CX Analytics
+### When growing revenue hides a structural problem
 
----
----
+> A subscription business can show rising revenue and still be sick underneath.
+> This project takes a real digital fitness-coaching case and answers an uncomfortable question:
+> **is the business growing, or just running faster to stay in the same place?**
 
-<a name="english"></a>
-
-## 🇺🇸 English
-
-### About this project
-
-This project started with a real business question:
-
-> *Can a fitness coaching business have growing revenue and a serious retention problem at the same time — without anyone noticing?*
-
-The answer is yes. And this analysis proves it.
-
-**FitCoach** is a digital fitness coaching business selling personalized training programs through Instagram and TikTok. Two products: a one-time Basic plan and a monthly Pro subscription. Stable revenue. Growing acquisition. Everything looks fine on the surface.
-
-Underneath: a segment of Pro customers who renewed 2–3 times is silently starting to disappear. New TikTok customers fill the gap month by month. Revenue doesn't drop. But average CLV does — and nobody was watching.
-
-This project is the analysis of that problem.
+**Stack:** MySQL 8 · Power BI  |  **Period:** Jan 2023 – Dec 2024  |  **Data:** 400 customers · 2,759 transactions · 17,312 engagement records
+**Approach:** from business question → SQL → visualization → **recommendation**. Not a dashboard: a decision.
 
 ---
 
-### The dataset
+## 1. The initial framing
 
-Synthetic dataset with realistic behavioral patterns, built to reflect real dynamics of digital coaching subscription businesses.
+**FitCoach** sells training programs in two tiers: **Basic** ($30, one-off) and **Pro** ($50/month, recurring). Monthly revenue grows steadily and the owner reasonably assumes the business is healthy.
 
-| Table | Records | Description |
-|---|---|---|
-| `customers` | 400 | Acquisition channel, sign-up date |
-| `transactions` | 1,859 | Payments, renewals, plan type |
-| `engagement` | 7,428 | Weekly activity: workouts, videos, messages |
+The working hypothesis is that this surface reading is misleading: **stable revenue may be masking a structural dependence on new sign-ups.** If enough new customers come in each month to replace those who leave, total revenue doesn't drop — but the business becomes increasingly dependent on continuing to buy customers.
 
-**Period:** January 2023 — December 2024 (24 months)  
-**Products:** Basic ($30 one-time) · Pro ($50 monthly renewal)  
-**Channels:** Instagram · TikTok · Referral · Organic
+### The questions the analysis had to answer
 
-Intentional patterns built into the dataset:
-
-- 📉 **The TikTok effect:** the highest-volume channel has the lowest CLV ($61 vs $285 from Referral)
-- ⚠️ **The pre-churn signal:** engagement drops 3 weeks before a customer stops renewing
-- 🔴 **The silent segment:** Pro customers with 3–6 months tenure, still "active" in the system but showing abandonment behavior
+| # | Business question | Area |
+|---|-------------------|------|
+| 1 | What % of customers don't renew after month 3? | Churn |
+| 2 | Do recent cohorts retain better or worse than older ones? | Cohorts |
+| 3 | Which customer segment is at risk? | RFM |
+| 4 | How much recurring revenue is at stake? | CLV |
+| 5 | Are there behavioral signals that predict churn? | Pre-churn |
+| 6 | Which acquisition channel brings the highest-value customers? | CLV by channel |
+| 7 | If we retain 30% of at-risk customers, how much extra revenue? | Recommendation |
 
 ---
 
-### Analysis structure
+## 2. What was done
 
-The project follows an end-to-end professional methodology:
+**Data audit first.** Before any analytical query, a quality check ran across all three tables: nulls in critical fields, duplicates, date coherence, out-of-range prices, and orphan references. Result: clean dataset (0 critical nulls, 0 duplicates, 0 orphans, 0 pre-acquisition transactions). One finding: **December 2024 is truncated in the source** — documented and isolated so it doesn't contaminate the reading.
+
+**SQL analytical layer (views).** A reusable view layer was built:
+- **Cohorts & retention** — each customer's activity by month since first purchase.
+- **RFM** — Recency / Frequency / Monetary segmentation with `NTILE(5)`.
+- **CLV** — accumulated value by segment and channel.
+- **Revenue at risk** — quantified revenue tied to the At-Risk segment.
+- **Churn & pre-churn** — customer state and pre-churn engagement comparison.
+
+**QA on the analysis itself.** During review, a direction bug in the RFM `NTILE` was found and fixed (scores were inverted, labeling the worst customers as "Champions"). The fix is documented in the SQL.
+
+**Power BI visualization.** A four-page dashboard (overview, cohorts, RFM, churn signals) for management consumption.
+
+---
+
+## 3. Results
+
+**Growth is real… and fragile.**
+- Revenue 2023: **$40,610** → 2024 (Jan–Nov): **$93,900** (**+131%**).
+- But **69% of the base is no longer active** by period end, and **37–40% of customers pay only once** and never return.
+
+**Retention drops early.**
+- Blended retention: **62%** (month 1) → **52%** (month 3) → **37%** (month 6).
+- **48% of customers are no longer active past month 3.**
+
+**Quality didn't deteriorate over time — but value per customer does fall.**
+- Cohorts at equal age: **54% (2023) vs 52% (2024)** at month 3. Nearly identical.
+- Average accumulated CLV falls for newer cohorts, but by **composition** (newer customers had fewer months to accumulate payments), not worse retention. *Telling these apart is the difference between a correct diagnosis and a wrong one.*
+
+**Channel explains almost everything.**
+
+| Channel | Avg CLV | Month-3 retention |
+|---------|--------:|------------------:|
+| Referral | **$417** | 59% |
+| Instagram | **$378** | 60% |
+| Organic | $292 | 46% |
+| TikTok | **$213** | **29%** |
+
+A Referral customer is worth nearly twice a TikTok customer and retains twice as well.
+
+**No behavioral pre-churn signal.**
+- Engagement in the 4 weeks before churn: **7.4** (churned) vs **7.7** (active). No relevant difference — verified both by level and by drop against each customer's own baseline. The real churn predictor is **channel**, not behavior.
+
+**Segmentation (RFM):**
+
+| Segment | Customers | % base | CLV | Frequency | Recency |
+|---------|----------:|-------:|----:|----------:|--------:|
+| Champion | 131 | 33% | $713 | 14 | 40 d |
+| Loyal | 29 | 7% | $736 | 15 | 56 d |
+| Intermediate | 80 | 20% | $122 | 3 | 102 d |
+| At Risk | 39 | 10% | $162 | 3 | 402 d |
+| Hibernating | 121 | 30% | $35 | 1 | 474 d |
+
+---
+
+## 4. Response to commercial management
+
+> *Executive presentation of the diagnosis.*
+
+**The business isn't growing: it's replacing.** Revenue rises, but it stands on a constant inflow of new sign-ups replacing a base that is emptying out (69% churn, 4 in 10 customers paying once). As long as the acquisition channel keeps feeding the funnel, the top-line looks healthy. The day that inflow cools, the problem surfaces all at once.
+
+**The bottleneck isn't retention over time: it's the quality of what we buy.** Cohorts retain evenly month over month; there's no progressive deterioration. What there is: one channel — TikTok — delivering volume at half the value and half the retention of Referral and Instagram. We're financing growth with the most expensive customer to keep.
+
+**The lever isn't "stop them from leaving," it's "stop bringing in the ones who leave".** There is no behavioral signal that lets us anticipate churn and intervene in time (we checked; it isn't there). Efficiency is therefore won **before** acquisition, by choosing the channel better — not **after**, by chasing customers who already decided to leave.
+
+### My observations
+
+1. **The surface metric (revenue) and the health metric (dependence on new sign-ups) point in opposite directions.** Reporting only the first gives a false sense of control.
+2. **"Falling average CLV" is true but easy to misread.** Much of the drop is a composition effect, not deterioration. Communicating it without that nuance would lead to chasing a non-problem (retention) and ignoring the real one (channel mix).
+3. **The "At Risk" segment is really win-back.** With average recency of 402 days, these aren't customers about to leave: they already left. The right action is reactivation, not preventive retention.
+
+### My recommendations to the business
+
+1. **Reallocate acquisition spend toward Referral and Instagram.** Highest CLV and retention. TikTok either gets a redesigned onboarding to lift retention, or is treated as a cheap awareness channel — not a source of Pro subscribers.
+2. **Formalize a referral program.** Referral is already the best channel organically; systematizing it (incentive per referral that completes 3 months) scales the best asset instead of the cheapest.
+3. **Win-back campaign on the At-Risk segment.** 39 customers = **$1,950/month** of recurring revenue. Recovering 30% is **$585/month** ($7,020/year) with zero new acquisition.
+
+---
+
+## 5. Repository structure
 
 ```
-1. Dataset audit         →  validate before analyzing
-2. Cohort analysis       →  monthly retention by acquisition cohort
-3. RFM + Segmentation   →  segment customers by value and behavior
-4. CLV by segment        →  quantify at-risk revenue in dollars
-5. Pre-churn signals     →  identify the exact moment of disengagement
-6. Insights + Solutions  →  business-oriented recommendations
+fitcoach-cx-analytics/
+├── README.md
+├── sql/          cx_analytics.sql   — schema + views (cohorts, RFM, CLV, churn, pre-churn)
+├── data/         raw tables + view outputs
+├── reports/      FitCoach_CaseStudy_CX.pdf   — full report
+├── charts/       analysis charts
+└── dashboard/    Power BI screenshots + DAX measure notes
 ```
 
----
+**How to reproduce:** load the three raw tables into MySQL 8 → run `sql/cx_analytics.sql` → validate RFM with `SELECT r_score, ROUND(AVG(recency_dias)) FROM vw_rfm_scores GROUP BY r_score;` (r_score = 5 must have fewer days) → connect Power BI to the views.
 
-### Tech stack
-
-![MySQL](https://img.shields.io/badge/MySQL-4479A1?style=for-the-badge&logo=mysql&logoColor=white)
-![Power BI](https://img.shields.io/badge/Power%20BI-F2C811?style=for-the-badge&logo=powerbi&logoColor=black)
-![Python](https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white)
-
-- **MySQL** — data audit, RFM with NTILE(5), cohorts, CLV, pre-churn signals
-- **Power BI + DAX** — 4-page dashboard with cross-page slicers by channel
-- **Python** — synthetic dataset generation with controlled behavioral patterns
+**Method notes:** synthetic dataset with realistic patterns · reference date 2024-12-31 (December truncated, excluded only from the monthly trend) · RFM with `NTILE(5)`, 5 = best · CLV = accumulated revenue per customer · all figures come from the SQL views or direct computation over the three tables.
 
 ---
 
-### Key insight
-
-> *"Revenue grew 40% over 24 months, but average CLV dropped 28%. A segment of 85 Pro customers with payment history is in a silent churn process. They represent $X in monthly recurring revenue. Retaining 30% through a proactive week-8 intervention adds $Y per month with zero new customer acquisition."*
-
----
-
-### Project status
-
-| Module | Status |
-|---|---|
-| Synthetic dataset | ✅ Complete |
-| Project documentation | ✅ Complete |
-| Dataset audit | 🔄 In progress |
-| Cohort analysis | 🔄 In progress |
-| RFM + Segmentation | 🔄 In progress |
-| CLV by segment | 🔄 In progress |
-| Pre-churn signals | ⏳ Pending |
-| Power BI dashboard | ⏳ Pending |
-
----
-
-### About me
-
-**Federico Almonacid** — Jr Data Analyst | BI & CX Analytics  
-Río Grande, Tierra del Fuego, Argentina
-
-4+ years in retail management (team leadership, NPS, KPI tracking, performance analysis). Actively transitioning into BI Analyst, CX Analyst and Revenue Analyst roles.
-
-[![LinkedIn](https://img.shields.io/badge/LinkedIn-0077B5?style=for-the-badge&logo=linkedin&logoColor=white)](https://www.linkedin.com/in/federicoalmonacid)
-[![GitHub](https://img.shields.io/badge/GitHub-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/Federico9420)
+*Federico Almonacid · 2026*
